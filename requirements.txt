@@ -5,4 +5,3 @@ scikit-learn             # Machine learning models (GradientBoostingRegressor, L
 matplotlib               # Plotting and visualization
 seaborn                  # Statistical data visualization
 requests                 # Making HTTP requests (e.g., for APIs)
-crogs 
