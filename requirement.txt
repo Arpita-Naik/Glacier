@@ -1,0 +1,9 @@
+flask                    # Web framework for serving the app
+numpy                    # Numerical computations
+pandas                   # Data manipulation and analysis
+scikit-learn             # Machine learning models (GradientBoostingRegressor, Linear Regression, Random Forest)
+matplotlib               # Plotting and visualization
+seaborn                  # Statistical data visualization
+requests                 # Making HTTP requests (e.g., for APIs)
+twilio                   # SMS and communication services integration
+crogs 
