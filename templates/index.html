@@ -649,7 +649,7 @@
             li=[];
             const startDate = '2024-12-01';
             const endDate = '2024-12-06';
-            let pdd=await fetch('http://127.0.0.1:10000/pdd/predict', {
+            let pdd=await fetch('https://glacier-rsyl.onrender.com/pdd/predict', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ latitude: parseFloat(lat), longitude: parseFloat(lon), start_date: startDate, end_date: endDate }),
@@ -657,7 +657,7 @@
             let pddData=await pdd.json();
             li[0]=pddData.estimated_melt_percentage;
 
-            let seis=await fetch('http://127.0.0.1:10000/seismic/predict', {
+            let seis=await fetch('https://glacier-rsyl.onrender.com/seismic/predict', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ lat: lat, lon: lon }),
@@ -665,7 +665,7 @@
             let seisData=await seis.json();
             li[1]=seisData.predicted_melt_rate_percent;
 
-            let snow=await fetch('http://127.0.0.1:10000/snow/predict-snow', {
+            let snow=await fetch('https://glacier-rsyl.onrender.com/snow/predict-snow', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ latitude: lat, longitude: lon, elevation: 0 }),
