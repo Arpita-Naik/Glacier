@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Melt Rate Prediction</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        #meltProgress {
+            width: 100%;
+            background-color: #e0e0e0;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 20px 0;
+            height: 25px;
+        }
+        .bar {
+            height: 100%;
+            width: 0;
+            background-color: green;
+            transition: width 0.5s;
+        }
+        #details p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Melt Rate Prediction</h1>
+
+    <form id="prediction-form">
+        <label for="latitude">Latitude:</label>
+        <input type="number" id="latitude" name="latitude" step="0.01" required>
+        <br><br>
+
+        <label for="longitude">Longitude:</label>
+        <input type="number" id="longitude" name="longitude" step="0.01" required>
+        <br><br>
+
+        <button type="submit">Predict Melt Rate</button>
+    </form>
+
+    <h2>Prediction Results</h2>
+    <div id="meltProgress">
+        <div class="bar"></div>
+    </div>
+    <div id="details"></div>
+
+    <script>
+        document.getElementById('prediction-form').addEventListener('submit', async function (event) {
+            event.preventDefault();
+
+            const latitude = document.getElementById('latitude').value;
+            const longitude = document.getElementById('longitude').value;
+
+            // Fetch melt rate predictions from all routes
+            await fetchMeltRates(latitude, longitude);
+        });
+
+        async function fetchMeltRates(lat, lon) {
+            try {
+                // Default start and end dates (5 days apart)
+                const startDate = '2024-12-01';
+                const endDate = '2024-12-06';
+
+                // Validate Latitude and Longitude
+                if (!isValidLatitude(lat) || !isValidLongitude(lon)) {
+                    throw new Error('Invalid latitude or longitude values.');
+                }
+
+                // Fetch data from all routes simultaneously
+                const responses = await Promise.allSettled([
+                    fetch('http://127.0.0.1:5000/pdd/predict', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ latitude: parseFloat(lat), longitude: parseFloat(lon), start_date: startDate, end_date: endDate }),
+                    }),
+                    fetch('http://127.0.0.1:5000/seismic/predict', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ lat: lat, lon: lon }),
+                    }),
+                    fetch('http://127.0.0.1:5000/snow/predict-snow', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ latitude: lat, longitude: lon, elevation: 0 }),
+                    })
+                ]);
+
+                // Extract results
+                const route1Data = responses[0].status === 'fulfilled' ? await responses[0].value.json() : null;
+                const route2Data = responses[1].status === 'fulfilled' ? await responses[1].value.json() : null;
+                const route3Data = responses[2].status === 'fulfilled' ? await responses[2].value.json() : null;
+
+                // Validate and get melt rates
+                const meltRate1 = route1Data ? validateMeltRate(route1Data.estimated_melt_percentage) : null;
+                const meltRate2 = route2Data ? validateMeltRate(route2Data.predicted_melt_rate_percent) : null;
+                console.log(route3Data);
+                const meltRate3 = route3Data ? validateMeltRate(route3Data.predictions[0].snow_depth) : null;
+
+                // Filter out null values
+                const meltRates = [meltRate1, meltRate2, meltRate3].filter(rate => rate !== null);
+
+                if (meltRates.length === 0) {
+                    throw new Error('No valid data received from the routes.');
+                }
+
+                // Calculate average melt rate
+                const averageMeltRate = meltRates.reduce((a, b) => a + b, 0) / meltRates.length;
+
+                // Update progress bar and details
+                updateProgressBar(averageMeltRate, { meltRate1, meltRate2, meltRate3 });
+            } catch (error) {
+                console.error('Error fetching melt rates:', error.message);
+                document.getElementById('details').innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        // Utility Functions
+        function isValidLatitude(latitude) {
+            return !isNaN(latitude) && latitude >= -90 && latitude <= 90;
+        }
+
+        function isValidLongitude(longitude) {
+            return !isNaN(longitude) && longitude >= -180 && longitude <= 180;
+        }
+
+        function validateMeltRate(meltRate) {
+    const rate = parseFloat(meltRate);
+    if (isNaN(rate) || rate < 0 || rate > 100) {
+        console.warn('Invalid melt rate received:', meltRate);
+        return null; // Gracefully handle invalid melt rate
+    }
+    return rate;
+}
+
+
+        function updateProgressBar(averageMeltRate, meltRates) {
+            const bar = document.querySelector('#meltProgress .bar');
+            const details = document.getElementById('details');
+
+            // Update bar width and color
+            bar.style.width = `${averageMeltRate}%`;
+            bar.style.background = averageMeltRate < 30 ? 'green' : averageMeltRate < 70 ? 'orange' : 'red';
+
+            // Update details
+            details.innerHTML = `
+                <p>Route 1 Melt Rate: ${meltRates.meltRate1 !== null ? meltRates.meltRate1.toFixed(2) + '%' : 'N/A'}</p>
+                <p>Route 2 Melt Rate: ${meltRates.meltRate2 !== null ? meltRates.meltRate2.toFixed(2) + '%' : 'N/A'}</p>
+                <p>Route 3 Melt Rate: ${meltRates.meltRate3 !== null ? meltRates.meltRate3.toFixed(2) + '%' : 'N/A'}</p>
+                <p><strong>Average Melt Rate: ${averageMeltRate.toFixed(2)}%</strong></p>
+            `;
+        }
+    </script>
+</body>
+</html>

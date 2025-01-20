@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Melt Rate Prediction with Map</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        #meltProgress {
+            width: 100%;
+            background-color: #e0e0e0;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 20px 0;
+            height: 25px;
+        }
+        .bar {
+            height: 100%;
+            width: 0;
+            background-color: green;
+            transition: width 0.5s;
+        }
+        #climateDetails, #predictionDetails {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        #map {
+            height: 400px;
+            margin: 20px 0;
+        }
+        .spinner {
+            display: none;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <h1>Melt Rate Prediction</h1>
+
+    <form id="prediction-form">
+        <label for="glacier">Glacier Name (or type manually):</label>
+        <input type="text" id="glacier" name="glacier" value="Gourlay Snowfield">
+        <br><br>
+
+        <label for="latitude">Latitude:</label>
+        <input type="number" id="latitude" name="latitude" step="0.01" value="-60.721">
+        <br><br>
+
+        <label for="longitude">Longitude:</label>
+        <input type="number" id="longitude" name="longitude" step="0.01" value="-45.61">
+        <br><br>
+
+        <button type="button" id="searchByName">Search by Name</button>
+        <button type="button" id="searchByCoordinates">Search by Coordinates</button>
+    </form>
+
+    <div id="map"></div>
+
+    <h2>Climate Data</h2>
+    <div id="climateDetails"></div>
+
+    <h2>Prediction Results</h2>
+    <div id="meltProgress">
+        <div class="bar"></div>
+    </div>
+    <div id="predictionDetails"></div>
+
+    <div class="spinner" id="spinner"></div>
+
+    <script>
+        const map = L.map('map').setView([-60.721, -45.61], 5);
+        let glacierData = {};
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        let marker;
+
+        const spinner = document.getElementById('spinner');
+        const apiKey = '74fec6dc40410a6d462bb4437160d7f5'; // Replace with your OpenWeatherMap API key
+
+        async function fetchClimateData(lat, lon) {
+            try {
+                const response = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch climate data.');
+                }
+                const data = await response.json();
+                return {
+                    temperature: data.main.temp,
+                    description: data.weather[0].description,
+                    windSpeed: data.wind.speed
+                };
+            } catch (error) {
+                console.error(error);
+                return null;
+            }
+        }
+
+        function showLoading() {
+            spinner.style.display = 'block';
+        }
+
+        function hideLoading() {
+            spinner.style.display = 'none';
+        }
+
+        async function fetchMeltRates(lat, lon) {
+            showLoading();
+            try {
+                const startDate = '2024-12-01';
+                const endDate = '2024-12-06';
+
+                const responses = await Promise.allSettled([
+                    fetch('http://127.0.0.1:5000/pdd/predict', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ latitude: parseFloat(lat), longitude: parseFloat(lon), start_date: startDate, end_date: endDate }),
+                    }),
+                    fetch('http://127.0.0.1:5000/seismic/predict', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ lat: lat, lon: lon }),
+                    }),
+                    fetch('http://127.0.0.1:5000/snow/predict-snow', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ latitude: lat, longitude: lon, elevation: 0 }),
+                    })
+                ]);
+
+                const route1Data = responses[0].status === 'fulfilled' ? await responses[0].value.json() : null;
+                const route2Data = responses[1].status === 'fulfilled' ? await responses[1].value.json() : null;
+                const route3Data = responses[2].status === 'fulfilled' ? await responses[2].value.json() : null;
+
+                const meltRate1 = route1Data ? validateMeltRate(route1Data.estimated_melt_percentage) : null;
+                const meltRate2 = route2Data ? validateMeltRate(route2Data.predicted_melt_rate_percent) : null;
+                const meltRate3 = route3Data ? validateMeltRate(route3Data.predictions[0].snow_depth) : null;
+
+                const meltRates = [meltRate1, meltRate2, meltRate3].filter(rate => rate !== null);
+
+                if (meltRates.length === 0) {
+                    updatePredictionDetails(`<p style="color:red;">Error: No valid data received from the routes.</p>`);
+                    hideLoading();
+                    return;
+                }
+
+                const averageMeltRate = meltRates.reduce((a, b) => a + b, 0) / meltRates.length;
+                updateProgressBar(averageMeltRate, { meltRate1, meltRate2, meltRate3 });
+
+                const climateData = await fetchClimateData(lat, lon);
+                let climateDetails = '';
+
+                if (climateData) {
+                    climateDetails += `<p>Temperature: ${climateData.temperature}&deg;C</p>`;
+                    climateDetails += `<p>Weather: ${climateData.description}</p>`;
+                    climateDetails += `<p>Wind Speed: ${climateData.windSpeed} m/s</p>`;
+                } else {
+                    climateDetails += '<p style="color:red;">Error fetching climate data.</p>';
+                }
+
+                updateClimateDetails(climateDetails);
+                hideLoading();
+            } catch (error) {
+                console.error('Error fetching melt rates:', error);
+                updatePredictionDetails(`<p style="color:red;">Error: ${error.message}</p>`);
+                hideLoading();
+            }
+        }
+
+        document.getElementById('searchByCoordinates').addEventListener('click', async function () {
+            const latitude = parseFloat(document.getElementById('latitude').value);
+            const longitude = parseFloat(document.getElementById('longitude').value);
+
+            if (marker) {
+                map.removeLayer(marker);
+            }
+
+            marker = L.marker([latitude, longitude]).addTo(map);
+            map.setView([latitude, longitude], 8);
+
+            await fetchMeltRates(latitude, longitude);
+        });
+
+        document.getElementById('searchByName').addEventListener('click', async function () {
+            const glacierName = document.getElementById('glacier').value.trim().toLowerCase();
+            const latitude = glacierData[glacierName].latitude;
+            const longitude = glacierData[glacierName].longitude;
+
+            if (marker) {
+                map.removeLayer(marker);
+            }
+
+            marker = L.marker([latitude, longitude]).addTo(map);
+            map.setView([latitude, longitude], 8);
+
+            await fetchMeltRates(latitude, longitude);
+        });
+
+        function isValidLatitude(lat) {
+            return !isNaN(lat) && lat >= -90 && lat <= 90;
+        }
+
+        function isValidLongitude(lon) {
+            return !isNaN(lon) && lon >= -180 && lon <= 180;
+        }
+
+        function validateMeltRate(rate) {
+            const meltRate = parseFloat(rate);
+            if (isNaN(meltRate) || meltRate < 0 || meltRate > 100) {
+                throw new Error('Invalid melt rate received.');
+            }
+            return meltRate;
+        }
+
+        function updateProgressBar(averageMeltRate, meltRates) {
+            const bar = document.querySelector('#meltProgress .bar');
+            const predictionDetails = document.getElementById('predictionDetails');
+
+            bar.style.width = `${averageMeltRate}%`;
+            bar.style.background = averageMeltRate < 30 ? 'green' : averageMeltRate < 70 ? 'orange' : 'red';
+
+            predictionDetails.innerHTML = `
+                <p>Route 1 Melt Rate: ${meltRates.meltRate1 !== null ? meltRates.meltRate1.toFixed(2) + '%' : 'N/A'}</p>
+                <p>Route 2 Melt Rate: ${meltRates.meltRate2 !== null ? meltRates.meltRate2.toFixed(2) + '%' : 'N/A'}</p>
+                <p>Route 3 Melt Rate: ${meltRates.meltRate3 !== null ? meltRates.meltRate3.toFixed(2) + '%' : 'N/A'}</p>
+                <p><strong>Average Melt Rate: ${averageMeltRate.toFixed(2)}%</strong></p>
+            `;
+        }
+
+        function updateClimateDetails(message) {
+            const climateDetails = document.getElementById('climateDetails');
+            climateDetails.innerHTML = message;
+        }
+
+        function updatePredictionDetails(message) {
+            const predictionDetails = document.getElementById('predictionDetails');
+            predictionDetails.innerHTML = message;
+        }
+        csvFilePath='filtered_glacier_data_with_names.csv';
+        async function loadCSV() {
+            try {
+                const response = await fetch(csvFilePath);
+                const text = await response.text();
+
+                text.split('\n').slice(1).forEach(row => {
+                    const [id, lat, lon, name, maxElev] = row.split(',');
+                    if (name) {
+                        glacierData[name.trim().toLowerCase()] = {
+                            latitude: parseFloat(lat),
+                            longitude: parseFloat(lon),
+                            maxElev: maxElev.trim()
+                        };
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading CSV file:', error.message);
+            }
+        }
+        loadCSV();
+    </script>
+</body>
+</html>

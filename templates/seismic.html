@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glacier Melt Rate Prediction</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 500px;
+            margin: auto;
+            text-align: center;
+        }
+        input[type="text"], button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 16px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .result {
+            margin-top: 20px;
+            font-size: 18px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Predict Glacier Melt Rate</h1>
+        <form id="predictionForm">
+            <input type="text" id="latitude" placeholder="Enter Latitude" required>
+            <input type="text" id="longitude" placeholder="Enter Longitude" required>
+            <button type="submit">Predict</button>
+        </form>
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        document.getElementById('predictionForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const lat = document.getElementById('latitude').value;
+            const lon = document.getElementById('longitude').value;
+
+            // Validate inputs
+            if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
+                document.getElementById('result').innerHTML = "Please enter valid numerical values for latitude and longitude.";
+                return;
+            }
+
+            try {
+                // Send POST request to the Flask API
+                const response = await fetch('http://127.0.0.1:5000/seismic/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ lat: lat, lon: lon }),
+                });
+
+                const data = await response.json();
+
+                // Check for errors
+                if (response.ok) {
+                    document.getElementById('result').innerHTML = `
+                        <strong>Prediction:</strong><br>
+                        Latitude: ${data.latitude}<br>
+                        Longitude: ${data.longitude}<br>
+                        Predicted Melt Rate: ${data.predicted_melt_rate_percent}%
+                    `;
+                } else {
+                    document.getElementById('result').innerHTML = `Error: ${data.error}`;
+                }
+            } catch (error) {
+                console.error(error);
+                document.getElementById('result').innerHTML = "An error occurred while processing your request.";
+            }
+        });
+    </script>
+</body>
+</html>

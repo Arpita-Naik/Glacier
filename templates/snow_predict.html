@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snow Melt Prediction</title>
+</head>
+<body>
+    <h1>Snow Melt Prediction</h1>
+    <form id="prediction-form">
+        <label for="latitude">Latitude:</label>
+        <input type="text" id="latitude" name="latitude" placeholder="Enter latitude" required>
+        <br>
+        <label for="longitude">Longitude:</label>
+        <input type="text" id="longitude" name="longitude" placeholder="Enter longitude" required>
+        <br>
+        <label for="elevation">Elevation (Optional):</label>
+        <input type="text" id="elevation" name="elevation" placeholder="Default: 8848">
+        <br><br>
+        <button type="submit">Predict</button>
+    </form>
+
+    <h2>Results</h2>
+    <div id="results"></div>
+
+    <script>
+        document.getElementById('prediction-form').addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            const latitude = document.getElementById('latitude').value;
+            const longitude = document.getElementById('longitude').value;
+            const elevation = document.getElementById('elevation').value || 8848;
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/snow/predict-snow', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        latitude: parseFloat(latitude),
+                        longitude: parseFloat(longitude),
+                        elevation: parseFloat(elevation)
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch predictions.');
+                }
+
+                const data = await response.json();
+                console.log(data);
+
+                // Display results
+                const resultsDiv = document.getElementById('results');
+                resultsDiv.innerHTML = "<ul>" + data.predictions.map(
+                    prediction => `<li>Date: ${prediction.datetime}, Snow Depth: ${prediction.snow_depth}</li>`
+                ).join('') + "</ul>";
+
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('results').innerText = 'Error: ' + error.message;
+            }
+        });
+    </script>
+</body>
+</html>
